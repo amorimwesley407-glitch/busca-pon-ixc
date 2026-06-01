@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clientes IXC</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="toolbar" aria-label="Controles">
+        <div>
+          <h1>Clientes IXC</h1>
+          <p id="status">Carregue a lista para consultar nome, login, bairro e PON.</p>
+        </div>
+        <div class="actions">
+          <button id="refreshButton" type="button">Atualizar</button>
+          <button id="exportButton" type="button" disabled>Exportar Excel</button>
+        </div>
+      </section>
+
+      <section class="filters" aria-label="Filtros">
+        <label>
+          Buscar
+          <input id="searchInput" type="search" placeholder="Nome, login, bairro ou PON" autocomplete="off" />
+        </label>
+        <label>
+          Por página
+          <select id="pageSizeInput">
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="tableShell">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome do cliente</th>
+              <th>Login</th>
+              <th>Bairro</th>
+              <th>PON</th>
+              <th>Cliente ativo</th>
+              <th>Online</th>
+              <th>Status contrato</th>
+              <th>Status acesso</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr>
+              <td colspan="8" class="empty">Nenhum dado carregado.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <nav class="pagination" aria-label="Paginação">
+        <button id="previousButton" type="button" disabled>Anterior</button>
+        <span id="pageInfo">Página 1 de 1</span>
+        <button id="nextButton" type="button" disabled>Próxima</button>
+      </nav>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
