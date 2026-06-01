@@ -93,7 +93,7 @@ input {
 
 .filters {
   display: grid;
-  grid-template-columns: 1fr 150px;
+  grid-template-columns: 1fr 180px 150px;
   gap: 12px;
   align-items: end;
 }

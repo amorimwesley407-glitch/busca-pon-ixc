@@ -3,6 +3,7 @@ const statusText = document.querySelector("#status");
 const refreshButton = document.querySelector("#refreshButton");
 const exportButton = document.querySelector("#exportButton");
 const searchInput = document.querySelector("#searchInput");
+const ponInput = document.querySelector("#ponInput");
 const pageSizeInput = document.querySelector("#pageSizeInput");
 const previousButton = document.querySelector("#previousButton");
 const nextButton = document.querySelector("#nextButton");
@@ -28,6 +29,10 @@ pageSizeInput.addEventListener("change", () => {
   page = 1;
   loadClientes();
 });
+ponInput.addEventListener("change", () => {
+  page = 1;
+  loadClientes();
+});
 previousButton.addEventListener("click", () => {
   if (page > 1) {
     page -= 1;
@@ -41,6 +46,7 @@ nextButton.addEventListener("click", () => {
   }
 });
 
+loadPons();
 loadClientes();
 
 async function loadClientes() {
@@ -52,7 +58,8 @@ async function loadClientes() {
     const params = new URLSearchParams({
       page: String(page),
       pageSize: pageSizeInput.value,
-      search: searchInput.value.trim()
+      search: searchInput.value.trim(),
+      pon: ponInput.value
     });
     const response = await fetch(`/api/clientes?${params}`);
     const data = await response.json();
@@ -79,6 +86,27 @@ async function loadClientes() {
     statusText.textContent = "Não foi possível carregar os dados.";
   } finally {
     setLoading(false);
+  }
+}
+
+async function loadPons() {
+  try {
+    ponInput.disabled = true;
+    const response = await fetch("/api/pons");
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Falha ao carregar PONs.");
+    }
+
+    ponInput.innerHTML = [
+      `<option value="">Todas</option>`,
+      ...(data.rows || []).map((row) => `<option value="${escapeHtml(row.pon)}">${escapeHtml(row.pon)}</option>`)
+    ].join("");
+  } catch {
+    ponInput.innerHTML = `<option value="">Todas</option>`;
+  } finally {
+    ponInput.disabled = false;
   }
 }
 

@@ -11,6 +11,10 @@ const publicDir = join(root, "public");
 const port = Number(process.env.PORT || 3000);
 const host = cleanHost(process.env.IXC_HOST || "jmstelecomsp.com.br");
 const token = process.env.IXC_TOKEN || "";
+const ponCache = {
+  expiresAt: 0,
+  rows: []
+};
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -25,6 +29,11 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/clientes") {
       await handleClientes(url, res);
+      return;
+    }
+
+    if (url.pathname === "/api/pons") {
+      await handlePons(res);
       return;
     }
 
@@ -54,6 +63,17 @@ async function handleClientes(url, res) {
   const page = positiveInt(url.searchParams.get("page"), 1);
   const pageSize = clamp(positiveInt(url.searchParams.get("pageSize"), 25), 10, 200);
   const search = String(url.searchParams.get("search") || "").trim();
+  const pon = String(url.searchParams.get("pon") || "").trim();
+
+  if (pon || looksLikePon(search)) {
+    await handleClientesByPon(res, {
+      page,
+      pageSize,
+      pon: pon || search,
+      exact: Boolean(pon)
+    });
+    return;
+  }
 
   const clientesData = await fetchPage("cliente", {
     page,
@@ -114,6 +134,30 @@ async function handleClientes(url, res) {
   });
 }
 
+async function handleClientesByPon(res, { page, pageSize, pon, exact }) {
+  const fibrasData = await fetchPage("radpop_radio_cliente_fibra", {
+    page,
+    pageSize,
+    qtype: "radpop_radio_cliente_fibra.ponid",
+    query: pon,
+    oper: exact ? "=" : "L",
+    sortname: "radpop_radio_cliente_fibra.ponid"
+  });
+
+  const details = await Promise.all(fibrasData.rows.map((fibra) => loadClientDetailsFromFibra(fibra)));
+  const rows = details.map((detail) => buildRow(detail.cliente, detail.login, detail.fibra, detail.contrato));
+  const warnings = details.flatMap((detail) => detail.warnings);
+
+  sendJson(res, 200, {
+    page,
+    pageSize,
+    total: fibrasData.total,
+    totalPages: Math.max(1, Math.ceil(fibrasData.total / pageSize)),
+    warnings: [...new Set(warnings)],
+    rows
+  });
+}
+
 async function loadClientDetails(cliente) {
   const idCliente = first(cliente, ["id", "id_cliente"]);
   const warnings = [];
@@ -152,6 +196,71 @@ async function loadClientDetails(cliente) {
   }
 
   return { login, fibra, contrato, warnings };
+}
+
+async function loadClientDetailsFromFibra(fibra) {
+  const idLogin = first(fibra, ["id_login", "id_radusuario", "id_radusuarios", "radusuario_id"]);
+  const warnings = [];
+  let login = {};
+  let cliente = {};
+  let contrato = {};
+
+  const loginResult = await Promise.allSettled([fetchFirst("radusuarios", "radusuarios.id", idLogin)]);
+  if (loginResult[0].status === "fulfilled") {
+    login = loginResult[0].value || {};
+  } else {
+    warnings.push(`radusuarios: ${loginResult[0].reason.message}`);
+  }
+
+  const idCliente = first(login, ["id_cliente", "cliente_id", "idcliente"]);
+  const [clienteResult, contratoResult] = await Promise.allSettled([
+    fetchFirst("cliente", "cliente.id", idCliente),
+    fetchFirst("cliente_contrato", "cliente_contrato.id_cliente", idCliente)
+  ]);
+
+  if (clienteResult.status === "fulfilled") {
+    cliente = clienteResult.value || {};
+  } else {
+    warnings.push(`cliente: ${clienteResult.reason.message}`);
+  }
+
+  if (contratoResult.status === "fulfilled") {
+    contrato = contratoResult.value || {};
+  } else {
+    warnings.push(`cliente_contrato: ${contratoResult.reason.message}`);
+  }
+
+  return { cliente, login, fibra, contrato, warnings };
+}
+
+async function handlePons(res) {
+  if (!token) {
+    sendJson(res, 500, {
+      error: "IXC_TOKEN não configurado no arquivo .env."
+    });
+    return;
+  }
+
+  const now = Date.now();
+  if (ponCache.expiresAt > now) {
+    sendJson(res, 200, { rows: ponCache.rows });
+    return;
+  }
+
+  const fibras = await fetchAllPages("radpop_radio_cliente_fibra", {
+    qtype: "radpop_radio_cliente_fibra.id",
+    query: "0",
+    oper: ">",
+    sortname: "radpop_radio_cliente_fibra.ponid"
+  });
+
+  const rows = [...new Set(fibras.map((fibra) => first(fibra, ["ponid", "pon"])).filter(Boolean))]
+    .sort(comparePon)
+    .map((pon) => ({ pon }));
+
+  ponCache.rows = rows;
+  ponCache.expiresAt = now + 10 * 60 * 1000;
+  sendJson(res, 200, { rows });
 }
 
 async function handleDebug(res) {
@@ -220,6 +329,27 @@ async function fetchPage(resource, options = {}) {
   };
 }
 
+async function fetchAllPages(resource, options = {}) {
+  const pageSize = options.pageSize || 1000;
+  const all = [];
+
+  for (let page = 1; page <= 100; page += 1) {
+    const data = await fetchPage(resource, {
+      ...options,
+      page,
+      pageSize
+    });
+
+    all.push(...data.rows);
+
+    if (all.length >= data.total || data.rows.length < pageSize) {
+      break;
+    }
+  }
+
+  return all;
+}
+
 async function fetchFirst(resource, qtype, query) {
   if (!query) return {};
 
@@ -233,6 +363,42 @@ async function fetchFirst(resource, qtype, query) {
   });
 
   return page.rows[0] || {};
+}
+
+function buildRow(cliente, login, fibra, contrato) {
+  const idCliente = first(cliente, ["id", "id_cliente"]);
+  const idLogin = first(login, ["id", "id_radusuario", "id_login"]);
+
+  return {
+    id: idCliente,
+    nome: first(cliente, ["razao", "nome", "fantasia", "cliente"]) || "",
+    login: first(login, ["login", "usuario", "user", "username"]) || "",
+    bairro:
+      first(cliente, ["bairro", "bairro_entrega", "endereco_bairro"]) ||
+      first(login, ["bairro"]) ||
+      first(fibra, ["bairro"]) ||
+      "",
+    pon:
+      first(fibra, ["pon", "ponid", "id_pon", "porta_pon", "olt_pon", "interface_pon"]) ||
+      first(login, ["pon", "id_pon", "porta_pon"]) ||
+      "",
+    clienteAtivo: labelYesNo(first(cliente, ["ativo"])),
+    online: labelYesNo(first(login, ["online"])),
+    statusContrato: labelContractStatus(first(contrato, ["status", "status_contrato"])),
+    statusAcesso: labelAccessStatus(
+      first(contrato, ["status_internet", "status_acesso"]) ||
+        first(login, ["ativo", "status", "status_acesso"])
+    ),
+    raw: {
+      clienteAtivo: first(cliente, ["ativo"]),
+      online: first(login, ["online"]),
+      statusContrato: first(contrato, ["status", "status_contrato"]),
+      statusAcesso:
+        first(contrato, ["status_internet", "status_acesso"]) ||
+        first(login, ["ativo", "status", "status_acesso"]),
+      idLogin
+    }
+  };
 }
 
 async function ixcPost(resource, body) {
@@ -349,6 +515,30 @@ function positiveInt(value, fallback) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function looksLikePon(value) {
+  return /\d+\s*\/\s*\d+\s*\/\s*\d+/.test(String(value || ""));
+}
+
+function comparePon(a, b) {
+  const left = splitPon(a);
+  const right = splitPon(b);
+
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const leftValue = left[index] ?? 0;
+    const rightValue = right[index] ?? 0;
+    if (leftValue !== rightValue) return leftValue - rightValue;
+  }
+
+  return String(a).localeCompare(String(b), "pt-BR");
+}
+
+function splitPon(value) {
+  return String(value)
+    .split("/")
+    .map((part) => Number.parseInt(part, 10))
+    .filter((part) => Number.isFinite(part));
 }
 
 async function serveStatic(pathname, res) {
