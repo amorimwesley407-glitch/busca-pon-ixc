@@ -52,7 +52,7 @@ loadClientes();
 async function loadClientes() {
   setLoading(true);
   statusText.textContent = "Consultando clientes no IXC...";
-  tableBody.innerHTML = `<tr><td colspan="8" class="empty">Carregando...</td></tr>`;
+  tableBody.innerHTML = `<tr><td colspan="9" class="empty">Carregando...</td></tr>`;
 
   try {
     const params = new URLSearchParams({
@@ -115,7 +115,7 @@ function renderTable() {
     const message = lastError
       ? `${lastError} Abra /api/debug para ver o diagnóstico.`
       : "Nenhum cliente encontrado.";
-    tableBody.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(message)}</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(message)}</td></tr>`;
     return;
   }
 
@@ -124,6 +124,7 @@ function renderTable() {
       (row) => `
         <tr>
           <td>${escapeHtml(row.nome)}</td>
+          <td>${escapeHtml(row.telefone)}</td>
           <td>${escapeHtml(row.login)}</td>
           <td>${escapeHtml(row.bairro)}</td>
           <td>${escapeHtml(row.pon)}</td>

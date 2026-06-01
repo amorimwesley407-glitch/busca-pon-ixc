@@ -437,6 +437,8 @@ function buildRow(cliente, login, fibra, contrato) {
   return {
     id: idCliente,
     nome: first(cliente, ["razao", "nome", "fantasia", "cliente"]) || "",
+    telefone:
+      first(cliente, ["fone", "telefone_celular", "telefone_comercial", "whatsapp", "contato"]) || "",
     login: first(login, ["login", "usuario", "user", "username"]) || "",
     bairro:
       first(cliente, ["bairro", "bairro_entrega", "endereco_bairro"]) ||
@@ -482,6 +484,7 @@ function mapFirstBy(rows, keys) {
 function buildCsv(rows) {
   const header = [
     "Nome do cliente",
+    "Telefone/Contato",
     "Login",
     "Bairro",
     "PON",
@@ -492,6 +495,7 @@ function buildCsv(rows) {
   ];
   const body = rows.map((row) => [
     row.nome,
+    row.telefone,
     row.login,
     row.bairro,
     row.pon,
