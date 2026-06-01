@@ -137,40 +137,50 @@ function renderTable() {
     .join("");
 }
 
-function exportExcel() {
-  const header = [
-    "Nome do cliente",
-    "Login",
-    "Bairro",
-    "PON",
-    "Cliente ativo",
-    "Online",
-    "Status contrato",
-    "Status acesso"
-  ];
-  const body = rows.map((row) => [
-    row.nome,
-    row.login,
-    row.bairro,
-    row.pon,
-    row.clienteAtivo,
-    row.online,
-    row.statusContrato,
-    row.statusAcesso
-  ]);
-  const csv = [header, ...body].map((line) => line.map(csvCell).join(";")).join("\r\n");
-  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
+async function exportExcel() {
+  const originalStatus = statusText.textContent;
+  const params = new URLSearchParams({
+    search: searchInput.value.trim(),
+    pon: ponInput.value
+  });
 
-  link.href = url;
-  link.download = `clientes-ixc-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  try {
+    setLoading(true);
+    statusText.textContent = `Gerando exportação com ${totalRows.toLocaleString("pt-BR")} registros...`;
+
+    const response = await fetch(`/api/clientes/export?${params}`);
+    const blob = await response.blob();
+
+    if (!response.ok) {
+      const message = await blob.text();
+      throw new Error(message || "Falha ao exportar dados.");
+    }
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = exportFilename();
+    link.click();
+    URL.revokeObjectURL(url);
+    statusText.textContent = originalStatus;
+  } catch (error) {
+    statusText.textContent = `Não foi possível exportar: ${error.message}`;
+  } finally {
+    setLoading(false);
+  }
 }
 
-function csvCell(value) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+function exportFilename() {
+  const suffix = ponInput.value || searchInput.value.trim() || "todos";
+  const safeSuffix = suffix
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
+  return `clientes-ixc-${safeSuffix}-${new Date().toISOString().slice(0, 10)}.csv`;
 }
 
 function setLoading(isLoading) {

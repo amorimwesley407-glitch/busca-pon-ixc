@@ -32,6 +32,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/clientes/export") {
+      await handleClientesExport(url, res);
+      return;
+    }
+
     if (url.pathname === "/api/pons") {
       await handlePons(res);
       return;
@@ -64,15 +69,19 @@ async function handleClientes(url, res) {
   const pageSize = clamp(positiveInt(url.searchParams.get("pageSize"), 25), 10, 200);
   const search = String(url.searchParams.get("search") || "").trim();
   const pon = String(url.searchParams.get("pon") || "").trim();
+  const payload = await getClientesPayload({ page, pageSize, search, pon });
 
+  sendJson(res, 200, payload);
+}
+
+async function getClientesPayload({ page, pageSize, search, pon }) {
   if (pon || looksLikePon(search)) {
-    await handleClientesByPon(res, {
+    return getClientesByPonPayload({
       page,
       pageSize,
       pon: pon || search,
       exact: Boolean(pon)
     });
-    return;
   }
 
   const clientesData = await fetchPage("cliente", {
@@ -90,51 +99,20 @@ async function handleClientes(url, res) {
 
   const rows = clientes.map((cliente, index) => {
     const { login, fibra, contrato } = details[index];
-    const idCliente = first(cliente, ["id", "id_cliente"]);
-    const idLogin = first(login, ["id", "id_radusuario", "id_login"]);
-
-    return {
-      id: idCliente,
-      nome: first(cliente, ["razao", "nome", "fantasia", "cliente"]) || "",
-      login: first(login, ["login", "usuario", "user", "username"]) || "",
-      bairro:
-        first(cliente, ["bairro", "bairro_entrega", "endereco_bairro"]) ||
-        first(login, ["bairro"]) ||
-        "",
-      pon:
-        first(fibra, ["pon", "ponid", "id_pon", "porta_pon", "olt_pon", "interface_pon"]) ||
-        first(login, ["pon", "id_pon", "porta_pon"]) ||
-        "",
-      clienteAtivo: labelYesNo(first(cliente, ["ativo"])),
-      online: labelYesNo(first(login, ["online"])),
-      statusContrato: labelContractStatus(first(contrato, ["status", "status_contrato"])),
-      statusAcesso: labelAccessStatus(
-        first(contrato, ["status_internet", "status_acesso"]) ||
-          first(login, ["ativo", "status", "status_acesso"])
-      ),
-      raw: {
-        clienteAtivo: first(cliente, ["ativo"]),
-        online: first(login, ["online"]),
-        statusContrato: first(contrato, ["status", "status_contrato"]),
-        statusAcesso:
-          first(contrato, ["status_internet", "status_acesso"]) ||
-          first(login, ["ativo", "status", "status_acesso"]),
-        idLogin
-      }
-    };
+    return buildRow(cliente, login, fibra, contrato);
   });
 
-  sendJson(res, 200, {
+  return {
     page,
     pageSize,
     total: clientesData.total,
     totalPages: Math.max(1, Math.ceil(clientesData.total / pageSize)),
     warnings: [...new Set(warnings)],
     rows
-  });
+  };
 }
 
-async function handleClientesByPon(res, { page, pageSize, pon, exact }) {
+async function getClientesByPonPayload({ page, pageSize, pon, exact }) {
   const fibrasData = await fetchPage("radpop_radio_cliente_fibra", {
     page,
     pageSize,
@@ -148,13 +126,100 @@ async function handleClientesByPon(res, { page, pageSize, pon, exact }) {
   const rows = details.map((detail) => buildRow(detail.cliente, detail.login, detail.fibra, detail.contrato));
   const warnings = details.flatMap((detail) => detail.warnings);
 
-  sendJson(res, 200, {
+  return {
     page,
     pageSize,
     total: fibrasData.total,
     totalPages: Math.max(1, Math.ceil(fibrasData.total / pageSize)),
     warnings: [...new Set(warnings)],
     rows
+  };
+}
+
+async function handleClientesExport(url, res) {
+  if (!token) {
+    sendJson(res, 500, {
+      error: "IXC_TOKEN não configurado. Defina a variável de ambiente antes de iniciar o servidor."
+    });
+    return;
+  }
+
+  const search = String(url.searchParams.get("search") || "").trim();
+  const pon = String(url.searchParams.get("pon") || "").trim();
+  const rows = await getExportRows({ search, pon });
+  const csv = buildCsv(rows);
+  const suffix = pon || (looksLikePon(search) ? search : "todos");
+
+  sendCsv(res, `clientes-ixc-${safeFilename(suffix)}.csv`, csv);
+}
+
+async function getExportRows({ search, pon }) {
+  if (pon || looksLikePon(search)) {
+    const pageSize = 100;
+    const firstPage = await getClientesByPonPayload({
+      page: 1,
+      pageSize,
+      pon: pon || search,
+      exact: Boolean(pon)
+    });
+    const rows = [...firstPage.rows];
+
+    for (let page = 2; page <= firstPage.totalPages; page += 1) {
+      const payload = await getClientesByPonPayload({
+        page,
+        pageSize,
+        pon: pon || search,
+        exact: Boolean(pon)
+      });
+      rows.push(...payload.rows);
+    }
+
+    return rows;
+  }
+
+  return getBatchExportRows({ search });
+}
+
+async function getBatchExportRows({ search }) {
+  const [clientes, logins, fibras, contratos] = await Promise.all([
+    fetchAllPages("cliente", {
+      qtype: search ? "cliente.razao" : "cliente.id",
+      query: search || "0",
+      oper: search ? "L" : ">",
+      sortname: "cliente.razao"
+    }),
+    fetchAllPages("radusuarios", {
+      qtype: "radusuarios.id",
+      query: "0",
+      oper: ">",
+      sortname: "radusuarios.id_cliente"
+    }),
+    fetchAllPages("radpop_radio_cliente_fibra", {
+      qtype: "radpop_radio_cliente_fibra.id",
+      query: "0",
+      oper: ">",
+      sortname: "radpop_radio_cliente_fibra.id_login"
+    }),
+    fetchAllPages("cliente_contrato", {
+      qtype: "cliente_contrato.id",
+      query: "0",
+      oper: ">",
+      sortname: "cliente_contrato.id_cliente"
+    })
+  ]);
+
+  const loginByClient = mapFirstBy(logins, ["id_cliente", "cliente_id", "idcliente"]);
+  const fibraByLogin = mapFirstBy(fibras, ["id_login", "id_radusuario", "id_radusuarios", "radusuario_id"]);
+  const contratoByClient = mapFirstBy(contratos, ["id_cliente", "cliente_id", "idcliente"]);
+
+  return clientes.map((cliente) => {
+    const idCliente = first(cliente, ["id", "id_cliente"]);
+    const login = loginByClient.get(String(idCliente)) || {};
+    const idLogin = first(login, ["id", "id_radusuario", "id_login"]);
+    const fibra = fibraByLogin.get(String(idLogin)) || {};
+    const contrato = contratoByClient.get(String(idCliente)) || {};
+
+    return buildRow(cliente, login, fibra, contrato);
   });
 }
 
@@ -401,6 +466,48 @@ function buildRow(cliente, login, fibra, contrato) {
   };
 }
 
+function mapFirstBy(rows, keys) {
+  const map = new Map();
+
+  for (const row of rows) {
+    const key = first(row, keys);
+    if (key && !map.has(String(key))) {
+      map.set(String(key), row);
+    }
+  }
+
+  return map;
+}
+
+function buildCsv(rows) {
+  const header = [
+    "Nome do cliente",
+    "Login",
+    "Bairro",
+    "PON",
+    "Cliente ativo",
+    "Online",
+    "Status contrato",
+    "Status acesso"
+  ];
+  const body = rows.map((row) => [
+    row.nome,
+    row.login,
+    row.bairro,
+    row.pon,
+    row.clienteAtivo,
+    row.online,
+    row.statusContrato,
+    row.statusAcesso
+  ]);
+
+  return [header, ...body].map((line) => line.map(csvCell).join(";")).join("\r\n");
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
 async function ixcPost(resource, body) {
   const auth = Buffer.from(token).toString("base64");
   const response = await fetch(`https://${host}/webservice/v1/${resource}`, {
@@ -566,6 +673,14 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendCsv(res, filename, csv) {
+  res.writeHead(200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="${filename}"`
+  });
+  res.end(`\ufeff${csv}`);
+}
+
 function sendText(res, status, text) {
   res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(text);
@@ -577,6 +692,15 @@ function cleanHost(value) {
     .replace(/\/adm\.php.*$/, "")
     .replace(/\/.*$/, "")
     .trim();
+}
+
+function safeFilename(value) {
+  return String(value || "todos")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
 }
 
 function loadEnv(path) {
