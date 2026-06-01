@@ -118,7 +118,7 @@ select {
 
 table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1320px;
   border-collapse: collapse;
 }
 
@@ -137,6 +137,20 @@ th {
   font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0;
+}
+
+th span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.columnFilter {
+  min-height: 32px;
+  border-color: #bcc8d6;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+  text-transform: none;
 }
 
 tr:last-child td {

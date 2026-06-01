@@ -5,6 +5,10 @@ const exportButton = document.querySelector("#exportButton");
 const searchInput = document.querySelector("#searchInput");
 const ponInput = document.querySelector("#ponInput");
 const pageSizeInput = document.querySelector("#pageSizeInput");
+const clienteAtivoInput = document.querySelector("#clienteAtivoInput");
+const onlineInput = document.querySelector("#onlineInput");
+const statusContratoInput = document.querySelector("#statusContratoInput");
+const statusAcessoInput = document.querySelector("#statusAcessoInput");
 const previousButton = document.querySelector("#previousButton");
 const nextButton = document.querySelector("#nextButton");
 const pageInfo = document.querySelector("#pageInfo");
@@ -33,6 +37,12 @@ ponInput.addEventListener("change", () => {
   page = 1;
   loadClientes();
 });
+[clienteAtivoInput, onlineInput, statusContratoInput, statusAcessoInput].forEach((input) => {
+  input.addEventListener("change", () => {
+    page = 1;
+    loadClientes();
+  });
+});
 previousButton.addEventListener("click", () => {
   if (page > 1) {
     page -= 1;
@@ -59,7 +69,11 @@ async function loadClientes() {
       page: String(page),
       pageSize: pageSizeInput.value,
       search: searchInput.value.trim(),
-      pon: ponInput.value
+      pon: ponInput.value,
+      clienteAtivo: clienteAtivoInput.value,
+      online: onlineInput.value,
+      statusContrato: statusContratoInput.value,
+      statusAcesso: statusAcessoInput.value
     });
     const response = await fetch(`/api/clientes?${params}`);
     const data = await response.json();
@@ -142,7 +156,11 @@ async function exportExcel() {
   const originalStatus = statusText.textContent;
   const params = new URLSearchParams({
     search: searchInput.value.trim(),
-    pon: ponInput.value
+    pon: ponInput.value,
+    clienteAtivo: clienteAtivoInput.value,
+    online: onlineInput.value,
+    statusContrato: statusContratoInput.value,
+    statusAcesso: statusAcessoInput.value
   });
 
   try {

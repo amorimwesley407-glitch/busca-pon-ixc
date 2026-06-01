@@ -76,23 +76,25 @@ async function handleClientes(url, res) {
   const pageSize = clamp(positiveInt(url.searchParams.get("pageSize"), 25), 10, 200);
   const search = String(url.searchParams.get("search") || "").trim();
   const pon = String(url.searchParams.get("pon") || "").trim();
-  const payload = await getClientesPayload({ page, pageSize, search, pon });
+  const filters = readFilters(url);
+  const payload = await getClientesPayload({ page, pageSize, search, pon, filters });
 
   sendJson(res, 200, payload);
 }
 
-async function getClientesPayload({ page, pageSize, search, pon }) {
+async function getClientesPayload({ page, pageSize, search, pon, filters }) {
   if (pon || looksLikePon(search)) {
     return getClientesByPonPayload({
       page,
       pageSize,
       pon: pon || search,
-      exact: Boolean(pon)
+      exact: Boolean(pon),
+      filters
     });
   }
 
-  if (search) {
-    const rows = await getBatchExportRows({ search });
+  if (search || hasFilters(filters)) {
+    const rows = await getBatchExportRows({ search, filters });
     const start = (page - 1) * pageSize;
 
     return {
@@ -133,7 +135,22 @@ async function getClientesPayload({ page, pageSize, search, pon }) {
   };
 }
 
-async function getClientesByPonPayload({ page, pageSize, pon, exact }) {
+async function getClientesByPonPayload({ page, pageSize, pon, exact, filters = {} }) {
+  if (hasFilters(filters)) {
+    const rows = await getAllRowsByPon({ pon, exact });
+    const filteredRows = applyFilters(rows, filters);
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total: filteredRows.length,
+      totalPages: Math.max(1, Math.ceil(filteredRows.length / pageSize)),
+      warnings: [],
+      rows: filteredRows.slice(start, start + pageSize)
+    };
+  }
+
   const fibrasData = await fetchPage("radpop_radio_cliente_fibra", {
     page,
     pageSize,
@@ -167,43 +184,39 @@ async function handleClientesExport(url, res) {
 
   const search = String(url.searchParams.get("search") || "").trim();
   const pon = String(url.searchParams.get("pon") || "").trim();
-  const rows = await getExportRows({ search, pon });
+  const filters = readFilters(url);
+  const rows = await getExportRows({ search, pon, filters });
   const csv = buildCsv(rows);
   const suffix = pon || (looksLikePon(search) ? search : "todos");
 
   sendCsv(res, `clientes-ixc-${safeFilename(suffix)}.csv`, csv);
 }
 
-async function getExportRows({ search, pon }) {
+async function getExportRows({ search, pon, filters }) {
   if (pon || looksLikePon(search)) {
-    const pageSize = 100;
-    const firstPage = await getClientesByPonPayload({
-      page: 1,
-      pageSize,
-      pon: pon || search,
-      exact: Boolean(pon)
-    });
-    const rows = [...firstPage.rows];
-
-    for (let page = 2; page <= firstPage.totalPages; page += 1) {
-      const payload = await getClientesByPonPayload({
-        page,
-        pageSize,
-        pon: pon || search,
-        exact: Boolean(pon)
-      });
-      rows.push(...payload.rows);
-    }
-
-    return rows;
+    const rows = await getAllRowsByPon({ pon: pon || search, exact: Boolean(pon) });
+    return applyFilters(rows, filters);
   }
 
-  return getBatchExportRows({ search });
+  return getBatchExportRows({ search, filters });
 }
 
-async function getBatchExportRows({ search }) {
+async function getBatchExportRows({ search, filters = {} }) {
   const rows = await getAllBatchRows();
-  return search ? rows.filter((row) => matchesSearch(row, search)) : rows;
+  const searchedRows = search ? rows.filter((row) => matchesSearch(row, search)) : rows;
+  return applyFilters(searchedRows, filters);
+}
+
+async function getAllRowsByPon({ pon, exact }) {
+  const fibras = await fetchAllPages("radpop_radio_cliente_fibra", {
+    qtype: "radpop_radio_cliente_fibra.ponid",
+    query: pon,
+    oper: exact ? "=" : "L",
+    sortname: "radpop_radio_cliente_fibra.ponid"
+  });
+  const details = await Promise.all(fibras.map((fibra) => loadClientDetailsFromFibra(fibra)));
+
+  return details.map((detail) => buildRow(detail.cliente, detail.login, detail.fibra, detail.contrato));
 }
 
 async function getAllBatchRows() {
@@ -710,6 +723,37 @@ function matchesSearch(row, search) {
   );
 
   return haystack.includes(query);
+}
+
+function readFilters(url) {
+  return {
+    clienteAtivo: String(url.searchParams.get("clienteAtivo") || "").trim(),
+    online: String(url.searchParams.get("online") || "").trim(),
+    statusContrato: String(url.searchParams.get("statusContrato") || "").trim(),
+    statusAcesso: String(url.searchParams.get("statusAcesso") || "").trim()
+  };
+}
+
+function hasFilters(filters) {
+  return Object.values(filters || {}).some(Boolean);
+}
+
+function applyFilters(rows, filters = {}) {
+  if (!hasFilters(filters)) return rows;
+
+  return rows.filter((row) => {
+    return (
+      matchesFilter(row.clienteAtivo, filters.clienteAtivo) &&
+      matchesFilter(row.online, filters.online) &&
+      matchesFilter(row.statusContrato, filters.statusContrato) &&
+      matchesFilter(row.statusAcesso, filters.statusAcesso)
+    );
+  });
+}
+
+function matchesFilter(value, filter) {
+  if (!filter) return true;
+  return normalizeSearch(value) === normalizeSearch(filter);
 }
 
 function normalizeSearch(value) {

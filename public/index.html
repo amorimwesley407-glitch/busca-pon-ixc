@@ -50,10 +50,45 @@
               <th>Login</th>
               <th>Bairro</th>
               <th>PON</th>
-              <th>Cliente ativo</th>
-              <th>Online</th>
-              <th>Status contrato</th>
-              <th>Status acesso</th>
+              <th>
+                <span>Cliente ativo</span>
+                <select id="clienteAtivoInput" class="columnFilter" aria-label="Filtrar cliente ativo">
+                  <option value="">Todos</option>
+                  <option value="Sim">Sim</option>
+                  <option value="Não">Não</option>
+                </select>
+              </th>
+              <th>
+                <span>Online</span>
+                <select id="onlineInput" class="columnFilter" aria-label="Filtrar online">
+                  <option value="">Todos</option>
+                  <option value="Sim">Sim</option>
+                  <option value="Não">Não</option>
+                </select>
+              </th>
+              <th>
+                <span>Status contrato</span>
+                <select id="statusContratoInput" class="columnFilter" aria-label="Filtrar status contrato">
+                  <option value="">Todos</option>
+                  <option value="Ativo">Ativo</option>
+                  <option value="Inativo">Inativo</option>
+                  <option value="Pré-contrato">Pré-contrato</option>
+                  <option value="Negativado">Negativado</option>
+                  <option value="Desistiu">Desistiu</option>
+                </select>
+              </th>
+              <th>
+                <span>Status acesso</span>
+                <select id="statusAcessoInput" class="columnFilter" aria-label="Filtrar status acesso">
+                  <option value="">Todos</option>
+                  <option value="Ativo">Ativo</option>
+                  <option value="Desativado">Desativado</option>
+                  <option value="Corte manual">Corte manual</option>
+                  <option value="Corte automático">Corte automático</option>
+                  <option value="Financeiro em atraso">Financeiro em atraso</option>
+                  <option value="Aguardando assinatura">Aguardando assinatura</option>
+                </select>
+              </th>
             </tr>
           </thead>
           <tbody id="tableBody">
