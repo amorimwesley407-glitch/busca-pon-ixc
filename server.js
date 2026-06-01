@@ -9,11 +9,17 @@ loadEnv(join(root, ".env"));
 
 const publicDir = join(root, "public");
 const port = Number(process.env.PORT || 3000);
+const listenHost = process.env.HOST || "0.0.0.0";
 const host = cleanHost(process.env.IXC_HOST || "jmstelecomsp.com.br");
 const token = process.env.IXC_TOKEN || "";
 const ponCache = {
   expiresAt: 0,
   rows: []
+};
+const batchCache = {
+  expiresAt: 0,
+  rows: [],
+  promise: null
 };
 
 const contentTypes = {
@@ -53,8 +59,9 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => {
+server.listen(port, listenHost, () => {
   console.log(`Interface IXC disponível em http://localhost:${port}`);
+  console.log(`Na rede local, acesse pelo IP desta máquina na porta ${port}.`);
 });
 
 async function handleClientes(url, res) {
@@ -84,12 +91,26 @@ async function getClientesPayload({ page, pageSize, search, pon }) {
     });
   }
 
+  if (search) {
+    const rows = await getBatchExportRows({ search });
+    const start = (page - 1) * pageSize;
+
+    return {
+      page,
+      pageSize,
+      total: rows.length,
+      totalPages: Math.max(1, Math.ceil(rows.length / pageSize)),
+      warnings: [],
+      rows: rows.slice(start, start + pageSize)
+    };
+  }
+
   const clientesData = await fetchPage("cliente", {
     page,
     pageSize,
-    qtype: search ? "cliente.razao" : "cliente.id",
-    query: search || "0",
-    oper: search ? "L" : ">",
+    qtype: "cliente.id",
+    query: "0",
+    oper: ">",
     sortname: "cliente.razao"
   });
 
@@ -181,11 +202,39 @@ async function getExportRows({ search, pon }) {
 }
 
 async function getBatchExportRows({ search }) {
+  const rows = await getAllBatchRows();
+  return search ? rows.filter((row) => matchesSearch(row, search)) : rows;
+}
+
+async function getAllBatchRows() {
+  const now = Date.now();
+  if (batchCache.expiresAt > now) {
+    return batchCache.rows;
+  }
+
+  if (batchCache.promise) {
+    return batchCache.promise;
+  }
+
+  batchCache.promise = buildAllBatchRows()
+    .then((rows) => {
+      batchCache.rows = rows;
+      batchCache.expiresAt = Date.now() + 5 * 60 * 1000;
+      return rows;
+    })
+    .finally(() => {
+      batchCache.promise = null;
+    });
+
+  return batchCache.promise;
+}
+
+async function buildAllBatchRows() {
   const [clientes, logins, fibras, contratos] = await Promise.all([
     fetchAllPages("cliente", {
-      qtype: search ? "cliente.razao" : "cliente.id",
-      query: search || "0",
-      oper: search ? "L" : ">",
+      qtype: "cliente.id",
+      query: "0",
+      oper: ">",
       sortname: "cliente.razao"
     }),
     fetchAllPages("radusuarios", {
@@ -438,7 +487,7 @@ function buildRow(cliente, login, fibra, contrato) {
     id: idCliente,
     nome: first(cliente, ["razao", "nome", "fantasia", "cliente"]) || "",
     telefone:
-      first(cliente, ["fone", "telefone_celular", "telefone_comercial", "whatsapp", "contato"]) || "",
+      first(cliente, ["telefone_celular", "whatsapp", "fone", "telefone_comercial", "contato"]) || "",
     login: first(login, ["login", "usuario", "user", "username"]) || "",
     bairro:
       first(cliente, ["bairro", "bairro_entrega", "endereco_bairro"]) ||
@@ -650,6 +699,25 @@ function splitPon(value) {
     .split("/")
     .map((part) => Number.parseInt(part, 10))
     .filter((part) => Number.isFinite(part));
+}
+
+function matchesSearch(row, search) {
+  const query = normalizeSearch(search);
+  const haystack = normalizeSearch(
+    [row.nome, row.telefone, row.login, row.bairro, row.pon, row.clienteAtivo, row.online, row.statusContrato, row.statusAcesso]
+      .filter(Boolean)
+      .join(" ")
+  );
+
+  return haystack.includes(query);
+}
+
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
 }
 
 async function serveStatic(pathname, res) {
