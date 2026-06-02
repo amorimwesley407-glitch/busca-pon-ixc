@@ -21,6 +21,7 @@ const batchCache = {
   rows: [],
   promise: null
 };
+const BATCH_CACHE_TTL_MS = Number(process.env.BATCH_CACHE_TTL_MS || 15_000);
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -77,6 +78,10 @@ async function handleClientes(url, res) {
   const search = String(url.searchParams.get("search") || "").trim();
   const pon = String(url.searchParams.get("pon") || "").trim();
   const filters = readFilters(url);
+  const forceRefresh = url.searchParams.get("forceRefresh") === "1";
+  if (forceRefresh) {
+    clearBatchCache();
+  }
   const payload = await getClientesPayload({ page, pageSize, search, pon, filters });
 
   sendJson(res, 200, payload);
@@ -185,6 +190,9 @@ async function handleClientesExport(url, res) {
   const search = String(url.searchParams.get("search") || "").trim();
   const pon = String(url.searchParams.get("pon") || "").trim();
   const filters = readFilters(url);
+  if (url.searchParams.get("forceRefresh") === "1") {
+    clearBatchCache();
+  }
   const rows = await getExportRows({ search, pon, filters });
   const csv = buildCsv(rows);
   const suffix = pon || (looksLikePon(search) ? search : "todos");
@@ -232,7 +240,7 @@ async function getAllBatchRows() {
   batchCache.promise = buildAllBatchRows()
     .then((rows) => {
       batchCache.rows = rows;
-      batchCache.expiresAt = Date.now() + 5 * 60 * 1000;
+      batchCache.expiresAt = Date.now() + BATCH_CACHE_TTL_MS;
       return rows;
     })
     .finally(() => {
@@ -240,6 +248,12 @@ async function getAllBatchRows() {
     });
 
   return batchCache.promise;
+}
+
+function clearBatchCache() {
+  batchCache.expiresAt = 0;
+  batchCache.rows = [];
+  batchCache.promise = null;
 }
 
 async function buildAllBatchRows() {

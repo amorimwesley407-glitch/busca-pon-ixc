@@ -20,7 +20,7 @@ let totalPages = 1;
 let totalRows = 0;
 let searchTimer;
 
-refreshButton.addEventListener("click", () => loadClientes());
+refreshButton.addEventListener("click", () => loadClientes({ forceRefresh: true }));
 exportButton.addEventListener("click", exportExcel);
 searchInput.addEventListener("input", () => {
   clearTimeout(searchTimer);
@@ -59,7 +59,7 @@ nextButton.addEventListener("click", () => {
 loadPons();
 loadClientes();
 
-async function loadClientes() {
+async function loadClientes(options = {}) {
   setLoading(true);
   statusText.textContent = "Consultando clientes no IXC...";
   tableBody.innerHTML = `<tr><td colspan="9" class="empty">Carregando...</td></tr>`;
@@ -75,6 +75,9 @@ async function loadClientes() {
       statusContrato: statusContratoInput.value,
       statusAcesso: statusAcessoInput.value
     });
+    if (options.forceRefresh) {
+      params.set("forceRefresh", "1");
+    }
     const response = await fetch(`/api/clientes?${params}`);
     const data = await response.json();
 
