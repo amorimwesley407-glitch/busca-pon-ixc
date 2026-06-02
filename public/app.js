@@ -230,10 +230,10 @@ function statusBadge(value) {
 
 function statusClass(value) {
   const normalized = String(value).toLowerCase();
-  if (["sim", "ativo", "online"].some((word) => normalized.includes(word))) return "good";
   if (["não", "nao", "inativo", "desativado", "desistiu", "negativado"].some((word) => normalized.includes(word))) {
     return "bad";
   }
+  if (["sim", "ativo", "online"].some((word) => normalized.includes(word))) return "good";
   if (["corte", "atraso", "aguardando", "pré", "pre"].some((word) => normalized.includes(word))) return "warn";
   return "";
 }
