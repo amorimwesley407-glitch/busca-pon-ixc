@@ -294,6 +294,15 @@ tbody td {
 border-bottom: 1px solid #f1f5f9;
 }
 
+th:first-child,
+td:first-child {
+min-width: 320px;
+max-width: 520px;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+
 tbody tr {
 transition: .15s ease;
 }
