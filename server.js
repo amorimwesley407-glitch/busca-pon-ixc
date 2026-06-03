@@ -526,7 +526,7 @@ function buildRow(cliente, login, fibra, contrato) {
       first(login, ["pon", "id_pon", "porta_pon"]) ||
       "",
     clienteAtivo: labelYesNo(first(cliente, ["ativo"])),
-    online: labelYesNo(first(login, ["online"])),
+    online: labelOnline(first(login, ["online"])),
     statusContrato: labelContractStatus(first(contrato, ["status", "status_contrato"])),
     statusAcesso: labelAccessStatus(
       first(contrato, ["status_internet", "status_acesso"]) ||
@@ -668,6 +668,12 @@ function labelYesNo(value) {
   if (normalized === "S" || normalized === "SS") return "Sim";
   if (normalized === "N" || normalized === "NN") return "Não";
   return value || "";
+}
+
+function labelOnline(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (!normalized) return "Sem status";
+  return labelYesNo(value) || "Sem status";
 }
 
 function labelContractStatus(value) {
